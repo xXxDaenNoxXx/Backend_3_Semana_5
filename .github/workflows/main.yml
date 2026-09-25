@@ -1,5 +1,5 @@
-name: Build and Push Docker Image  
- 
+name: Build and Push Docker Image 
+
 on:
   push:
     branches:
@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v3
 
@@ -19,34 +20,32 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # CORRECCIÓN: Ahora apunta a la carpeta del microservicio './banco'
       - name: Build Docker Image
         run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/ms-core-banco:latest ./banco
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest .
 
-      # CORRECCIÓN: Sube la imagen del microservicio específico
       - name: Push Docker Image
         run: |
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/ms-core-banco:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest
 
-      # OPTIMIZACIÓN: Usamos una acción oficial y segura para ejecutar comandos por SSH en tu EC2
-      - name: Deploy to EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            # Loguearse a Docker Hub dentro de la EC2
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            
-            # Descargar la nueva imagen
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/ms-core-banco:latest
-            
-            # Detener y remover el contenedor anterior si ya existía
-            docker stop ms-core-banco || true
-            docker rm ms-core-banco || true
-            
-            # Iniciar el nuevo contenedor mapeando el puerto de tu app Java (8090 según tu arquitectura)
-            docker run -d --name ms-core-banco -p 8090:8090 ${{ secrets.DOCKERHUB_USERNAME }}/ms-core-banco:latest
+      - name: Add SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
 
+      - name: SSH commands to deploy
+        run: |
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.USER_SERVER }}@${{ secrets.EC2_HOST }} << 'EOF'
+
+            echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest
+
+            docker stop my-app || true
+            docker rm my-app || true
+
+            docker run -d --name my-app -p 8080:8080 \
+              ${{ secrets.DOCKERHUB_USERNAME }}/my-app:latest
+
+          EOF
